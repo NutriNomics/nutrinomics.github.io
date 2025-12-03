@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eliah's Stencil Maker</title>
+    <link rel="icon" href="favicon.ico">
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css">
+    <!-- OpenCV.js -->
+    <script async src="https://docs.opencv.org/4.12.0/opencv.js" type="text/javascript" onload="onOpenCvReady()"></script>
+  </head>
+  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
+    <div id="toastContainer"></div>
+  </div>
+
+  <body>
+    <div class="container py-4">
+      <h1 class="text-center fw-bold mb-4 d-flex justify-content-center align-items-center gap-2">
+          <img src="logo.svg" alt="Logo" class="title-icon">
+          Eliah's Stencil Maker
+          <img src="logo.svg" alt="Logo" class="title-icon">
+        </h1>
+      <div class="row g-4">
+        <!-- LEFT CONTROL PANEL -->
+        <aside class="col-12 col-md-4">
+          <!-- Input Image (collapsible) -->
+          <div class="card mb-3">
+            <div class="card-header fw-bold d-flex justify-content-between align-items-center"
+                 data-bs-toggle="collapse"
+                 data-bs-target="#inputImageCollapse"
+                 role="button"
+                 aria-expanded="true"
+                 aria-controls="inputImageCollapse"
+                 style="cursor: pointer;">
+              <span data-i18n="inputImage">🖼️ Input Image</span>
+              <span class="collapse-icon">▼</span>
+            </div>
+
+            <div id="inputImageCollapse" class="collapse show">
+              <div class="card-body">
+                <div class="mb-3">
+                  <label class="form-label small text-muted" data-i18n="upload">Upload</label>
+                  <input type="file" id="imageFile" accept="image/*" class="form-control">
+                </div>
+
+                <div class="input-group mb-2">
+                  <input type="text" id="imageUrl" class="form-control" placeholder="Image URL">
+                  <button id="loadUrlBtn" class="btn btn-primary" data-i18n="load">Load</button>
+                </div>
+
+                <div class="d-flex gap-2">
+                  <button id="clearSavedBtn" class="btn btn-outline-secondary btn-sm" data-i18n="clearSaved">Clear Saved</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Intensity (collapsible) -->
+          <div class="card mb-3">
+            <div class="card-header fw-semibold d-flex justify-content-between align-items-center"
+                 data-bs-toggle="collapse"
+                 data-bs-target="#intensityCollapse"
+                 role="button"
+                 aria-expanded="true"
+                 aria-controls="intensityCollapse"
+                 style="cursor: pointer;">
+              <span data-i18n="intensity">🎚️ Intensity</span>
+              <span class="collapse-icon">▼</span>
+            </div>
+
+            <div id="intensityCollapse" class="collapse show">
+              <div class="card-body">
+                <label for="thresholdRange" class="form-label small text-muted" data-i18n="intensityTip">Tip: adjust threshold to tune contrast.</label>
+                <input type="range" class="form-range mb-0 volume-slider" id="thresholdRange" min="0" max="255" value="128">
+              </div>
+            </div>
+          </div>
+
+          <!-- Effects (collapsible) -->
+          <div class="card mb-3">
+            <div class="card-header fw-semibold d-flex justify-content-between align-items-center"
+                 data-bs-toggle="collapse"
+                 data-bs-target="#effectsCollapse"
+                 role="button"
+                 aria-expanded="true"
+                 aria-controls="effectsCollapse"
+                 style="cursor: pointer;">
+              <span data-i18n="effects">✨ Effects</span>
+              <span class="collapse-icon">▼</span>
+            </div>
+
+            <div id="effectsCollapse" class="collapse show">
+              <div class="card-body">
+                <label class="form-label small text-muted" data-i18n="effectsTip">Tip: toggle effects and preview result.</label>
+                <div class="effect-group mb-0">
+                  <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" id="cannyCheckbox">
+                    <label class="form-check-label" for="cannyCheckbox" data-i18n="edgeDetect">Edge Detect (Canny)</label>
+                  </div>
+
+                  <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" id="sketchCheckbox">
+                    <label class="form-check-label" for="sketchCheckbox" data-i18n="pencilSketch">Pencil Sketch</label>
+                  </div>
+
+                  <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" id="posterizeCheckbox">
+                    <label class="form-check-label" for="posterizeCheckbox" data-i18n="posterize">Posterize</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Blur (collapsible) -->
+          <div class="card mb-3">
+            <div class="card-header fw-semibold d-flex justify-content-between align-items-center"
+                 data-bs-toggle="collapse"
+                 data-bs-target="#blurCollapse"
+                 role="button"
+                 aria-expanded="true"
+                 aria-controls="blurCollapse"
+                 style="cursor: pointer;">
+              <span data-i18n="blur">🧼 Blur</span>
+              <span class="collapse-icon">▼</span>
+            </div>
+
+            <div id="blurCollapse" class="collapse show">
+              <div class="card-body">
+                <label for="gaussianBlurRange" class="form-label small text-muted" data-i18n="blurTip">Tip: use Gaussian Blur to remove small artifacts.</label>
+                <input type="range" class="form-range mb-0 volume-slider" id="gaussianBlurRange" min="1" max="25" step="2" value="1">
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- RIGHT SIDE PREVIEW (8-WIDE on md+) -->
+        <main class="col-12 col-md-8">
+          <div class="viewer-panel shadow-sm p-3">
+            <div class="text-center mb-3">
+              <img id="previewImg" class="img-fluid preview-area">
+            </div>
+
+            <div class="text-center">
+              <canvas id="canvas" class="d-none stencil-area"></canvas>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-center mt-3">
+            <a id="downloadBtn" class="btn btn-dark d-none" download="stencil.png" data-i18n="downloadStencil">Download Stencil</a>
+          </div>
+        </main>
+      </div>
+    </div>
+<div id="themeToggleWrapper" class="position-fixed top-0 start-0 m-2 z-3 bg-body-secondary bg-opacity-25 rounded-pill shadow-sm d-flex align-items-center justify-content-center px-3 py-2" role="button" style="cursor: pointer;">
+                <span id="themeIcon" class="fs-4">☀️</span>
+            </div>
+
+            <div id="languageToggleWrapper" class="position-fixed top-0 end-0 m-2 ms-5 z-3 bg-body-secondary bg-opacity-25 rounded-pill shadow-sm d-flex align-items-center justify-content-center px-3 py-2">
+    <select id="languageSelector" class="form-select form-select-sm">
+        <option value="en">🇬🇧 English</option>
+        <option value="de">🇩🇪 Deutsch</option>
+        <option value="es">🇪🇸 Español</option>
+    </select>
+</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
