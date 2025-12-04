@@ -9,14 +9,14 @@
     <!-- Open Graph -->
     <meta property="og:title" content="Eliah's Stencil Maker">
     <meta property="og:description" content="Turn any image into a clean stencil with adjustable intensity, effects, blur, and instant download.">
-    <meta property="og:image" content="https://yourdomain.com/preview.jpg">
-    <meta property="og:url" content="https://yourdomain.com">
+    <meta property="og:image" content="https://nutrinomics.github.io/preview.png">
+    <meta property="og:url" content="https://nutrinomics.github.io">
     <meta property="og:type" content="website">
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Eliah's Stencil Maker">
     <meta name="twitter:description" content="Generate clean stencils from any image. Free, fast, and powered by OpenCV.">
-    <meta name="twitter:image" content="https://yourdomain.com/preview.jpg">
+    <meta name="twitter:image" content="https://nutrinomics.github.io/preview.png">
     <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="style.css">
@@ -61,7 +61,7 @@
             <div id="intensityCollapse" class="collapse show">
               <div class="card-body">
                 <label class="form-label small text-muted" data-i18n="intensityTip">Tip: adjust threshold to tune contrast.</label>
-                <input type="range" id="thresholdRange" min="0" max="255" value="128" class="form-range mb-0">
+                <input type="range" id="thresholdRange" min="0" max="255" value="128" class="form-range mb-0 volume-slider">
               </div>
             </div>
           </div>
@@ -118,11 +118,11 @@
                   </div>
                   <div class="col-6">
                     <label class="form-label small text-muted mb-0" data-i18n="kernelSize">Kernel Size</label>
-                    <input type="range" id="morphKernelRange" min="1" max="21" step="2" value="3" class="form-range">
+                    <input type="range" id="morphKernelRange" min="1" max="21" step="2" value="3" class="form-range volume-slider">
                   </div>
                   <div class="col-6">
                     <label class="form-label small text-muted mb-0" data-i18n="iterations">Iterations</label>
-                    <input type="range" id="morphIterationsRange" min="0" max="5" step="1" value="1" class="form-range">
+                    <input type="range" id="morphIterationsRange" min="0" max="5" step="1" value="1" class="form-range volume-slider">
                   </div>
                 </div>
               </div>
@@ -137,7 +137,7 @@
             <div id="blurCollapse" class="collapse show">
               <div class="card-body">
                 <label class="form-label small text-muted" data-i18n="blurTip">Tip: use Gaussian Blur to remove small artifacts.</label>
-                <input type="range" id="gaussianBlurRange" min="1" max="25" step="2" value="1" class="form-range mb-0">
+                <input type="range" id="gaussianBlurRange" min="1" max="25" step="2" value="1" class="form-range mb-0 volume-slider">
               </div>
             </div>
           </div>
