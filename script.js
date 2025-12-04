@@ -6,10 +6,16 @@ const thresholdRange = document.getElementById("thresholdRange");
 const canvas = document.getElementById("canvas");
 const downloadBtn = document.getElementById("downloadBtn");
 
+const invertCheckbox = document.getElementById("invertCheckbox");
 const cannyCheckbox = document.getElementById("cannyCheckbox");
 const sketchCheckbox = document.getElementById("sketchCheckbox");
 const posterizeCheckbox = document.getElementById("posterizeCheckbox");
 const gaussianBlurRange = document.getElementById("gaussianBlurRange");
+
+// NEW: morphology controls
+const morphOperation = document.getElementById("morphOperation");
+const morphKernelRange = document.getElementById("morphKernelRange");
+const morphIterationsRange = document.getElementById("morphIterationsRange");
 
 
 let cvReady = false;
@@ -18,6 +24,38 @@ let modified = false;
 function onOpenCvReady() {
     cvReady = true;
     console.log("OpenCV is ready");
+}
+
+// ---- Debounce helper ----
+function debounce(func, delay = 150) {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), delay);
+    };
+}
+
+function toGrayscale(data) {
+    for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i+1] + data[i+2]) / 3;
+        data[i] = data[i+1] = data[i+2] = avg;
+    }
+}
+
+function applyPosterize(data, levels = 4) {
+    for (let i = 0; i < data.length; i += 4) {
+        data[i]     = posterizePixel(data[i], levels);
+        data[i + 1] = posterizePixel(data[i + 1], levels);
+        data[i + 2] = posterizePixel(data[i + 2], levels);
+    }
+}
+
+function invertColors(data) {
+    for (let i = 0; i < data.length; i += 4) {
+        data[i]     = 255 - data[i];
+        data[i + 1] = 255 - data[i + 1];
+        data[i + 2] = 255 - data[i + 2];
+    }
 }
 
 
@@ -79,11 +117,13 @@ function pencilSketch(data) {
 
 function updateStencil() {
     if (!loadedImage.src) {
-        showToast("Please load an image first!", "warning");
+        showToast(translations[localStorage.getItem("lang") || "en"].loadImageFirst || "Please load an image first!", "warning");
         return;
     }
 
     const threshold = parseInt(thresholdRange.value);
+    // pick threshold mode
+    let thresholdMode = "global";
 
     const ctx = canvas.getContext("2d");
     canvas.width = loadedImage.width;
@@ -97,26 +137,22 @@ function updateStencil() {
     if (sketchCheckbox.checked) {
         pencilSketch(data);
     } else {
-        // Convert to grayscale
-        for (let i = 0; i < data.length; i += 4) {
-            let avg = (data[i] + data[i+1] + data[i+2]) / 3;
-            data[i] = data[i+1] = data[i+2] = avg;
-        }
+       toGrayscale(data);
     }
 
     // Posterize colors
     if (posterizeCheckbox.checked) {
-        for (let i = 0; i < data.length; i += 4) {
-            data[i] = posterizePixel(data[i]);
-            data[i+1] = posterizePixel(data[i+1]);
-            data[i+2] = posterizePixel(data[i+2]);
-        }
+        applyPosterize(data);
+    }
+
+    // Invert
+    if (invertCheckbox.checked) {
+       invertColors(data);
     }
 
     ctx.putImageData(imgData, 0, 0);
 
-
-    // Canny edge detection using OpenCV.js
+    // If Canny is checked, do edge detection and show result
     if (cannyCheckbox.checked) {
         if (!cvReady) {
             showToast("OpenCV.js is still loading. Please wait a few seconds.", "warning");
@@ -129,19 +165,89 @@ function updateStencil() {
         cv.Canny(src, dst, 50, 150, 3, false);
         cv.imshow(canvas, dst);
         src.delete(); dst.delete();
+
     } else {
-        // Apply threshold if no Canny
-        for (let i = 0; i < data.length; i += 4) {
-            let v = data[i] > threshold ? 255 : 0;
-            data[i] = data[i+1] = data[i+2] = v;
+        // Not Canny: apply threshold. Prefer OpenCV implementations when available.
+        if (cvReady) {
+            try {
+                let src = cv.imread(canvas);
+                let gray = new cv.Mat();
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+
+                let dst = new cv.Mat();
+
+                if (thresholdMode === "global") {
+                    // Use cv.threshold with the manual threshold value
+                    cv.threshold(gray, dst, threshold, 255, cv.THRESH_BINARY);
+                } else {
+                    // fallback to global
+                    cv.threshold(gray, dst, threshold, 255, cv.THRESH_BINARY);
+                }
+
+                // Apply morphology (smooth lines) if requested
+                const morphOp = morphOperation?.value || "none";
+                const kernelSize = parseInt(morphKernelRange?.value || 3);
+                const iterations = parseInt(morphIterationsRange?.value || 1);
+
+                if (morphOp && morphOp !== "none" && kernelSize >= 1) {
+                    // ensure odd kernel size
+                    const k = kernelSize % 2 === 1 ? kernelSize : kernelSize + 1;
+                    let M = cv.Mat.ones(k, k, cv.CV_8U);
+                    let morphDst = new cv.Mat();
+
+                    switch (morphOp) {
+                        case "erode":
+                            cv.erode(dst, morphDst, M, new cv.Point(-1, -1), iterations, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+                            dst.delete();
+                            dst = morphDst;
+                            break;
+                        case "dilate":
+                            cv.dilate(dst, morphDst, M, new cv.Point(-1, -1), iterations, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+                            dst.delete();
+                            dst = morphDst;
+                            break;
+                        case "open":
+                            cv.morphologyEx(dst, morphDst, cv.MORPH_OPEN, M, new cv.Point(-1, -1), iterations);
+                            dst.delete();
+                            dst = morphDst;
+                            break;
+                        case "close":
+                            cv.morphologyEx(dst, morphDst, cv.MORPH_CLOSE, M, new cv.Point(-1, -1), iterations);
+                            dst.delete();
+                            dst = morphDst;
+                            break;
+                        case "gradient":
+                            cv.morphologyEx(dst, morphDst, cv.MORPH_GRADIENT, M, new cv.Point(-1, -1), iterations);
+                            dst.delete();
+                            dst = morphDst;
+                            break;
+                        default:
+                            // do nothing
+                    }
+                    M.delete();
+                }
+
+                cv.imshow(canvas, dst);
+
+                // cleanup mats
+                src.delete(); gray.delete(); dst.delete();
+
+            } catch (e) {
+                console.error("OpenCV processing error:", e);
+                showToast("OpenCV processing failed — falling back to simple threshold.", "warning");
+                // fallback to simple pixel loop below
+                applySimpleGlobalThreshold();
+            }
+        } else {
+            // If OpenCV not ready — apply a simple global threshold in pure JS
+            applySimpleGlobalThreshold();
         }
-        ctx.putImageData(imgData, 0, 0);
     }
 
     canvas.classList.remove("d-none");
 
     // ----------------------------
-    // Apply Gaussian Blur (final)
+    // Apply Gaussian Blur (final) using OpenCV if available
     // ----------------------------
     let blurValue = parseInt(gaussianBlurRange.value);
 
@@ -150,17 +256,21 @@ function updateStencil() {
             showToast("OpenCV.js is still loading. Please wait a few seconds.", "warning");
             return;
         }
-        let srcBlur = cv.imread(canvas);
-        let dstBlur = new cv.Mat();
+        try {
+            let srcBlur = cv.imread(canvas);
+            let dstBlur = new cv.Mat();
 
-        // Ensure odd kernel size (required by OpenCV)
-        let ksize = new cv.Size(blurValue, blurValue);
+            // Ensure odd kernel size (required by OpenCV)
+            let ksize = new cv.Size(blurValue, blurValue);
 
-        cv.GaussianBlur(srcBlur, dstBlur, ksize, 0, 0, cv.BORDER_DEFAULT);
-        cv.imshow(canvas, dstBlur);
+            cv.GaussianBlur(srcBlur, dstBlur, ksize, 0, 0, cv.BORDER_DEFAULT);
+            cv.imshow(canvas, dstBlur);
 
-        srcBlur.delete();
-        dstBlur.delete();
+            srcBlur.delete();
+            dstBlur.delete();
+        } catch (e) {
+            console.error("Blur error:", e);
+        }
     }
 
     downloadBtn.href = canvas.toDataURL("image/png");
@@ -171,12 +281,43 @@ function updateStencil() {
     modified = true;
 }
 
+// Fallback simple global threshold (pure JS pixel loop)
+function applySimpleGlobalThreshold() {
+    try {
+        const ctx = canvas.getContext("2d");
+        let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let data = imgData.data;
+        const threshold = parseInt(thresholdRange.value);
+
+        for (let i = 0; i < data.length; i += 4) {
+            let v = data[i] > threshold ? 255 : 0;
+            data[i] = data[i+1] = data[i+2] = v;
+        }
+        ctx.putImageData(imgData, 0, 0);
+    } catch (e) {
+        console.error("Fallback threshold error:", e);
+    }
+}
+
+const updateStencilDebounced = debounce(updateStencil, 120);
 
 
-// Include Gaussian blur in live update listeners
-[thresholdRange, cannyCheckbox, sketchCheckbox, posterizeCheckbox, gaussianBlurRange].forEach(el => {
-    el.addEventListener("input", updateStencil);
+[
+  thresholdRange,
+  cannyCheckbox,
+  invertCheckbox,
+  sketchCheckbox,
+  posterizeCheckbox,
+  gaussianBlurRange,
+  morphOperation,
+  morphKernelRange,
+  morphIterationsRange,
+].forEach(el => {
+    if (!el) return;
+    el.addEventListener("input", updateStencilDebounced);
+    el.addEventListener("change", updateStencilDebounced);
 });
+
 
 // Save image to browser (localStorage)
 function saveImageToLocal(base64) {
@@ -185,7 +326,7 @@ function saveImageToLocal(base64) {
         console.log("Image saved locally.");
         clearSavedBtn.classList.remove("d-none");
     } catch (e) {
-        showToast("LocalStorage save failed:" + e, warning);
+        showToast("LocalStorage save failed:" + e, "warning");
     }
 }
 
@@ -256,8 +397,6 @@ document.addEventListener('DOMContentLoaded', function () {
         updateThemeIcon();
     });
 });
-
-
 // Translation dictionary
 const translations = {
     en: {
@@ -276,7 +415,20 @@ const translations = {
         blurTip: "Tip: use Gaussian Blur to remove small artifacts.",
         downloadStencil: "Download Stencil",
         loadImageFirst: "Please load an image first!",
-        savedImageCleared: "Saved image cleared."
+        savedImageCleared: "Saved image cleared.",
+        // Smooth Lines / Morphology
+        smoothLines: "Smooth Lines",
+        smoothTip: "Tip: cleans edges using morphology.",
+        morphOperation: "Operation",
+        morphNone: "None",
+        morphErode: "Erode",
+        morphDilate: "Dilate",
+        morphOpen: "Open (erode → dilate)",
+        morphClose: "Close (dilate → erode)",
+        morphGradient: "Gradient",
+        kernelSize: "Kernel Size",
+        iterations: "Iterations",
+        dragDrop: "Drag & Drop Image Here"
     },
     de: {
         inputImage: "🖼️ Eingabebild",
@@ -294,7 +446,20 @@ const translations = {
         blurTip: "Tipp: Gaussian Blur verwenden, um kleine Artefakte zu entfernen.",
         downloadStencil: "Stencil herunterladen",
         loadImageFirst: "Bitte zuerst ein Bild laden!",
-        savedImageCleared: "Gespeichertes Bild gelöscht."
+        savedImageCleared: "Gespeichertes Bild gelöscht.",
+        // Smooth Lines / Morphology
+        smoothLines: "🧵 Glatte Linien",
+        smoothTip: "Tipp: Kanten mit Morphologie glätten.",
+        morphOperation: "Operation",
+        morphNone: "Keine",
+        morphErode: "Erosion",
+        morphDilate: "Dilatation",
+        morphOpen: "Öffnen (erodieren → dilatieren)",
+        morphClose: "Schließen (dilatieren → erodieren)",
+        morphGradient: "Gradient",
+        kernelSize: "Kernelgröße",
+        iterations: "Iterationen",
+        dragDrop: "Bild hierher ziehen & ablegen"
     },
     es: {
         inputImage: "🖼️ Imagen de entrada",
@@ -312,9 +477,23 @@ const translations = {
         blurTip: "Consejo: usa Gaussian Blur para eliminar pequeños artefactos.",
         downloadStencil: "Descargar stencil",
         loadImageFirst: "¡Carga primero una imagen!",
-        savedImageCleared: "Imagen guardada borrada."
+        savedImageCleared: "Imagen guardada borrada.",
+        // Smooth Lines / Morphology
+        smoothLines: "🧵 Líneas suaves",
+        smoothTip: "Consejo: limpia los bordes usando morfología.",
+        morphOperation: "Operación",
+        morphNone: "Ninguna",
+        morphErode: "Erosionar",
+        morphDilate: "Dilatar",
+        morphOpen: "Abrir (erosionar → dilatar)",
+        morphClose: "Cerrar (dilatar → erosionar)",
+        morphGradient: "Gradiente",
+        kernelSize: "Tamaño de kernel",
+        iterations: "Iteraciones",
+        dragDrop: "Arrastra y suelta la imagen aquí"
     }
 };
+
 
 // Function to update UI text
 function updateLanguage(lang) {
@@ -339,4 +518,55 @@ document.addEventListener("DOMContentLoaded", () => {
     const savedLang = localStorage.getItem("lang") || "en";
     languageSelector.value = savedLang;
     updateLanguage(savedLang);
+});
+
+const dropZone = document.getElementById("dropZone");
+
+dropZone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+});
+
+dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("dragover");
+});
+
+dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = e => setImageSource(e.target.result);
+    reader.readAsDataURL(file);
+});
+
+// Make dropZone clickable to open file picker (file input is hidden)
+dropZone.addEventListener("click", () => {
+    imageFile.click();
+});
+
+// Function to show/hide kernel and iteration controls
+function updateMorphControlsVisibility() {
+    const kernelCol = morphKernelRange.closest('.col-6');
+    const iterationsCol = morphIterationsRange.closest('.col-6');
+
+    if (morphOperation.value === 'none') {
+        kernelCol.style.display = 'none';
+        iterationsCol.style.display = 'none';
+    } else {
+        kernelCol.style.display = 'block';
+        iterationsCol.style.display = 'block';
+    }
+}
+
+// Initial check on page load
+updateMorphControlsVisibility();
+
+// Add listener to update visibility on change
+morphOperation.addEventListener('change', () => {
+    updateMorphControlsVisibility();
+    updateStencilDebounced(); // reapply stencil if needed
 });
